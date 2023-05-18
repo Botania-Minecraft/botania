@@ -38,6 +38,7 @@ import org.jetbrains.annotations.Nullable;
 
 import vazkii.botania.api.mana.ManaCollisionGhost;
 import vazkii.botania.common.block.block_entity.PlatformBlockEntity;
+import vazkii.botania.common.item.BotaniaItems;
 
 import java.util.List;
 import java.util.function.BiPredicate;
@@ -80,7 +81,7 @@ public class PlatformBlock extends BotaniaBlock implements ManaCollisionGhost, E
 	@Override
 	public VoxelShape getShape(@NotNull BlockState state, @NotNull BlockGetter world, @NotNull BlockPos pos, @NotNull CollisionContext context) {
 		BlockEntity te = world.getBlockEntity(pos);
-		if (te instanceof PlatformBlockEntity platform && platform.getCamoState() != null) {
+		if (te instanceof PlatformBlockEntity platform && platform.getCamoState() != null && !platform.getCamoState().isAir()) {
 			return platform.getCamoState().getShape(world, pos);
 		} else {
 			return super.getShape(state, world, pos, context);
@@ -149,6 +150,14 @@ public class PlatformBlock extends BotaniaBlock implements ManaCollisionGhost, E
 
 				return InteractionResult.sidedSuccess(world.isClientSide());
 			}
+		} else if (!currentStack.isEmpty()
+				&& currentStack.is(BotaniaItems.phantomInk)
+				&& tile instanceof PlatformBlockEntity camo) {
+			if (!world.isClientSide) {
+				camo.setCamoState(Blocks.AIR.defaultBlockState()); //Air is being used as a sentinel value here
+			}
+
+			return InteractionResult.sidedSuccess(world.isClientSide());
 		}
 
 		return InteractionResult.PASS;
