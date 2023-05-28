@@ -18,6 +18,7 @@ and start a new "Upcoming" section.
 
 {% include changelog_header.html version="Upcoming" %}
 
+* Add: Looniums now change the loot table they pull from based on the structure in which they are placed, only applies to newly placed looniums
 * Add: The Worldshaper's Sextant can now generate spheres as well (Wormbo)
 * Add: Grass Seeds can now be placed by dispensers.
 * Add: Manufactory Halo's auto-crafting can be toggled by shift+right-clicking the crafting table segment or right-clicking the item in an inventory screen

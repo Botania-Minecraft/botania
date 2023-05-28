@@ -12,6 +12,8 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.util.random.WeightedEntry;
+import net.minecraft.util.random.WeightedRandom;
 import net.minecraft.world.Difficulty;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
@@ -34,15 +36,20 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.ServerLevelAccessor;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.levelgen.structure.Structure;
 import net.minecraft.world.level.storage.loot.LootContext;
+import net.minecraft.world.level.storage.loot.LootTable;
 import net.minecraft.world.level.storage.loot.parameters.LootContextParamSets;
 import net.minecraft.world.phys.Vec3;
 
 import vazkii.botania.api.block_entity.FunctionalFlowerBlockEntity;
 import vazkii.botania.api.block_entity.RadiusDescriptor;
 import vazkii.botania.common.block.BotaniaFlowerBlocks;
+import vazkii.botania.common.helper.StructureHelper;
 import vazkii.botania.common.lib.BotaniaTags;
 import vazkii.botania.xplat.XplatAbstractions;
+
+import javax.annotation.Nullable;
 
 import java.util.*;
 import java.util.function.Consumer;
@@ -50,7 +57,6 @@ import java.util.function.Consumer;
 public class LooniumBlockEntity extends FunctionalFlowerBlockEntity {
 	private static final int COST = 35000;
 	private static final int RANGE = 5;
-	private static final String TAG_LOOT_TABLE = "lootTable";
 	public static final Set<Class<? extends Monster>> VALID_MOBS = Set.of(
 			Creeper.class,
 			EnderMan.class,
@@ -59,8 +65,38 @@ public class LooniumBlockEntity extends FunctionalFlowerBlockEntity {
 			Spider.class,
 			Zombie.class
 	);
+	private static final String TAG_CUSTOM_LOOT_TABLE = "lootTable";
+	private @Nullable ResourceLocation customLootTable = null;
 
-	private ResourceLocation lootTable = new ResourceLocation("minecraft", "chests/simple_dungeon");
+	//TODO make this pull from a JSON file in a datapack instead of being hardcoded
+	private static final Map<ResourceLocation, WeightedEntry.Wrapper<ResourceLocation>> lootTables = Map.of(
+			new ResourceLocation("minecraft:ancient_city"), WeightedEntry.wrap(new ResourceLocation("botania:loonium/ancient_city"), 1),
+			new ResourceLocation("minecraft:bastion"), WeightedEntry.wrap(new ResourceLocation("botania:loonium/bastion"), 1),
+			new ResourceLocation("minecraft:end_city"), WeightedEntry.wrap(new ResourceLocation("botania:loonium/end_city"), 1),
+			new ResourceLocation("minecraft:fortress"), WeightedEntry.wrap(new ResourceLocation("minecraft:nether_bridge"), 1),
+			new ResourceLocation("minecraft:stronghold"), WeightedEntry.wrap(new ResourceLocation("botania:loonium/stronghold"), 1),
+			new ResourceLocation("minecraft:mansion"), WeightedEntry.wrap(new ResourceLocation("minecraft:woodland_mansion"), 1)
+	);
+	private static final ResourceLocation defaultLootTable = new ResourceLocation("minecraft", "chests/simple_dungeon");
+
+	//Returns an empty loot table if the selected ResourceLocation is invalid
+	private LootTable getLootTable(ServerLevel level) {
+		List<WeightedEntry.Wrapper<ResourceLocation>> validLoot = new ArrayList<>();
+		for (var entry : lootTables.entrySet()) {
+			ResourceLocation key = entry.getKey();
+			WeightedEntry.Wrapper<ResourceLocation> value = entry.getValue();
+			Structure structure = StructureHelper.getStructure(level, key);
+			if (StructureHelper.isInStructureBounds(level, getBlockPos(), structure)) {
+				validLoot.add(value);
+			}
+		}
+		Optional<WeightedEntry.Wrapper<ResourceLocation>> roll = WeightedRandom.getRandomItem(level.random, validLoot);
+		if (roll.isPresent()) {
+			return level.getServer().getLootTables().get(roll.get().getData());
+		} else {
+			return level.getServer().getLootTables().get(defaultLootTable);
+		}
+	}
 
 	public LooniumBlockEntity(BlockPos pos, BlockState state) {
 		super(BotaniaFlowerBlocks.LOONIUM, pos, state);
@@ -78,8 +114,8 @@ public class LooniumBlockEntity extends FunctionalFlowerBlockEntity {
 			ItemStack stack;
 			do {
 				LootContext ctx = new LootContext.Builder((ServerLevel) world).create(LootContextParamSets.EMPTY);
-				List<ItemStack> stacks = ((ServerLevel) world).getServer().getLootTables()
-						.get(lootTable).getRandomItems(ctx);
+				LootTable table = customLootTable == null ? getLootTable((ServerLevel) world) : level.getServer().getLootTables().get(customLootTable);
+				List<ItemStack> stacks = table.getRandomItems(ctx);
 				if (stacks.isEmpty()) {
 					return;
 				} else {
@@ -190,15 +226,17 @@ public class LooniumBlockEntity extends FunctionalFlowerBlockEntity {
 	@Override
 	public void readFromPacketNBT(CompoundTag cmp) {
 		super.readFromPacketNBT(cmp);
-		if (cmp.contains(TAG_LOOT_TABLE)) {
-			lootTable = new ResourceLocation(cmp.getString(TAG_LOOT_TABLE));
+		if (cmp.contains(TAG_CUSTOM_LOOT_TABLE)) {
+			customLootTable = new ResourceLocation(cmp.getString(TAG_CUSTOM_LOOT_TABLE));
 		}
 	}
 
 	@Override
 	public void writeToPacketNBT(CompoundTag cmp) {
 		super.writeToPacketNBT(cmp);
-		cmp.putString(TAG_LOOT_TABLE, lootTable.toString());
+		if (customLootTable != null) {
+			cmp.putString(TAG_CUSTOM_LOOT_TABLE, customLootTable.toString());
+		}
 	}
 
 	public static void dropLooniumItems(LivingEntity living, Consumer<ItemStack> consumer) {
